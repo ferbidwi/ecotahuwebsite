@@ -1,0 +1,434 @@
+@extends('layouts.admin')
+@section('title', 'Edit Limbah')
+@section('page-title', 'Edit Limbah')
+
+@section('content')
+
+<div class="max-w-3xl mx-auto glass-card rounded-2xl p-6"
+     x-data="{
+         kategoriOpen: false,
+         statusOpen: false,
+         satuanOpen: false,
+         hapusGambarLama: false,
+         fileName: null,
+         previewUrl: null,
+         undoFile: null,
+         undoFileName: null,
+         showUndo: false,
+         undoTimer: null,
+         showLightbox: false,
+         lightboxUrl: '',
+         satuanValue: '{{ old('satuan', $limbah->satuan) }}',
+
+         openLightbox(url) {
+             this.lightboxUrl = url;
+             this.showLightbox = true;
+             document.body.style.overflow = 'hidden';
+         },
+
+         closeLightbox() {
+             this.showLightbox = false;
+             document.body.style.overflow = '';
+         },
+
+         handleFileChange(e) {
+             const file = e.target.files[0];
+             if (!file) return;
+
+             const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+             if (!allowed.includes(file.type)) {
+                 alert('⚠️ Hanya file gambar yang diperbolehkan (JPG, PNG, WEBP).');
+                 e.target.value = '';
+                 this.fileName = null;
+                 return;
+             }
+             if (file.size > 2 * 1024 * 1024) {
+                 alert('⚠️ Ukuran gambar maksimal 2MB.');
+                 e.target.value = '';
+                 this.fileName = null;
+                 return;
+             }
+
+             if (this.previewUrl) URL.revokeObjectURL(this.previewUrl);
+             this.previewUrl = URL.createObjectURL(file);
+             this.fileName = file.name;
+             this.showUndo = false;
+             this.undoFile = null;
+             this.undoFileName = null;
+             clearTimeout(this.undoTimer);
+         },
+
+         cancelFile() {
+             const file = this.$refs.fileInput.files[0];
+             if (!file) return;
+             this.undoFile = file;
+             this.undoFileName = this.fileName;
+             this.$refs.fileInput.value = '';
+             this.fileName = null;
+             if (this.previewUrl) {
+                 URL.revokeObjectURL(this.previewUrl);
+                 this.previewUrl = null;
+             }
+             this.showUndo = true;
+             clearTimeout(this.undoTimer);
+             this.undoTimer = setTimeout(() => {
+                 this.showUndo = false;
+                 this.undoFile = null;
+                 this.undoFileName = null;
+             }, 10000);
+         },
+
+         undoCancel() {
+             if (!this.undoFile) return;
+             const dt = new DataTransfer();
+             dt.items.add(this.undoFile);
+             this.$refs.fileInput.files = dt.files;
+             this.previewUrl = URL.createObjectURL(this.undoFile);
+             this.fileName = this.undoFile.name;
+             this.showUndo = false;
+             clearTimeout(this.undoTimer);
+         }
+     }"
+     @keydown.escape.window="closeLightbox()">
+
+    <h2 class="text-xl font-bold txt-primary mb-6">Form Edit Limbah</h2>
+
+    @if ($errors->any())
+        <div class="mb-4 px-4 py-3 rounded-xl text-sm"
+             style="background: rgb(var(--danger-soft) / 0.6); border: 1px solid rgb(var(--danger) / 0.3); color: rgb(var(--danger));">
+            <p class="font-bold mb-1">Ada beberapa kesalahan:</p>
+            <ul class="list-disc list-inside space-y-1">
+                @foreach ($errors->all() as $e) <li>{{ $e }}</li> @endforeach
+            </ul>
+        </div>
+    @endif
+
+    <form action="{{ route('admin.limbah.update', $limbah->id) }}" method="POST" enctype="multipart/form-data"
+          novalidate class="space-y-5">
+        @csrf @method('PUT')
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+            {{-- NAMA LIMBAH --}}
+            <div class="md:col-span-2">
+                <label class="block text-sm font-medium txt-primary mb-1">
+                    Nama Limbah <span style="color: rgb(var(--danger));">*</span>
+                </label>
+                <input type="text" name="nama_limbah" value="{{ old('nama_limbah', $limbah->nama_limbah) }}"
+                       minlength="3" maxlength="150"
+                       oninput="this.value = this.value.replace(/[^A-Za-z\s]/g, '')"
+                       class="w-full px-4 py-2.5 rounded-xl border bd-default focus:outline-none focus:ring-2 focus:ring-emerald-500 glass-input"
+                       style="color: rgb(var(--text-primary));">
+                @error('nama_limbah')
+                    <p class="text-xs mt-1" style="color: rgb(var(--danger));">{{ $message }}</p>
+                @else
+                    <p class="text-xs txt-secondary mt-1">Hanya huruf & spasi. Minimal 3 karakter.</p>
+                @enderror
+            </div>
+
+            {{-- KATEGORI --}}
+            <div class="relative" @click.away="kategoriOpen = false">
+                <label class="block text-sm font-medium txt-primary mb-1">
+                    Kategori <span style="color: rgb(var(--danger));">*</span>
+                </label>
+                <button type="button" @click="kategoriOpen = !kategoriOpen"
+                        class="w-full flex items-center justify-between gap-2 px-4 py-2.5 text-sm rounded-xl border bd-default glass-card hover:bd-strong focus:outline-none focus:ring-2 focus:ring-emerald-500 transition text-left">
+                    <span class="txt-primary" id="kategoriLabel">
+                        @php
+                            $selectedKategori = old('kategori_id', $limbah->kategori_id);
+                            $selectedKategoriName = $kategori->firstWhere('id', $selectedKategori)?->nama_kategori ?? '-- Pilih Kategori --';
+                        @endphp
+                        {{ $selectedKategoriName }}
+                    </span>
+                    <svg class="w-4 h-4 txt-muted flex-shrink-0" :class="kategoriOpen && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </button>
+
+                <div x-show="kategoriOpen" x-cloak
+                     class="absolute left-0 right-0 z-30 mt-2 glass-card rounded-xl border bd-soft shadow-lg max-h-64 overflow-y-auto">
+                    @foreach ($kategori as $k)
+                        <button type="button" data-value="{{ $k->id }}" data-label="{{ $k->nama_kategori }}"
+                                onclick="selectKategori(this)"
+                                class="w-full flex items-center justify-between gap-2 px-4 py-2.5 text-sm text-left hover:bg-emerald-500/10 transition
+                                       {{ $selectedKategori == $k->id ? 'bg-emerald-500/10 txt-brand font-semibold' : 'txt-primary' }}">
+                            <span>{{ $k->nama_kategori }}</span>
+                            @if ($selectedKategori == $k->id)
+                                <svg class="w-4 h-4 txt-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            @endif
+                        </button>
+                    @endforeach
+                </div>
+
+                <input type="hidden" name="kategori_id" id="inputKategori" value="{{ $selectedKategori }}">
+                @error('kategori_id')
+                    <p class="text-xs mt-1" style="color: rgb(var(--danger));">{{ $message }}</p>
+                @enderror
+            </div>
+
+            {{-- HARGA --}}
+            <div>
+                <label class="block text-sm font-medium txt-primary mb-1">
+                    Harga (Rp) <span style="color: rgb(var(--danger));">*</span>
+                </label>
+                <input type="text" inputmode="numeric" name="harga" value="{{ old('harga', $limbah->harga) }}"
+                       oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+                       class="w-full px-4 py-2.5 rounded-xl border bd-default focus:outline-none focus:ring-2 focus:ring-emerald-500 glass-input"
+                       style="color: rgb(var(--text-primary));">
+                @error('harga')
+                    <p class="text-xs mt-1" style="color: rgb(var(--danger));">{{ $message }}</p>
+                @else
+                    <p class="text-xs txt-secondary mt-1">Hanya angka.</p>
+                @enderror
+            </div>
+
+            {{-- STOK --}}
+            <div>
+                <label class="block text-sm font-medium txt-primary mb-1">
+                    Stok <span style="color: rgb(var(--danger));">*</span>
+                </label>
+                <input type="text" inputmode="numeric" name="stok" value="{{ old('stok', $limbah->stok) }}"
+                       oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+                       class="w-full px-4 py-2.5 rounded-xl border bd-default focus:outline-none focus:ring-2 focus:ring-emerald-500 glass-input"
+                       style="color: rgb(var(--text-primary));">
+                @error('stok')
+                    <p class="text-xs mt-1" style="color: rgb(var(--danger));">{{ $message }}</p>
+                @else
+                    <p class="text-xs txt-secondary mt-1">Boleh 0 kalau stok habis.</p>
+                @enderror
+            </div>
+
+            {{-- SATUAN --}}
+            <div class="relative" @click.away="satuanOpen = false">
+                <label class="block text-sm font-medium txt-primary mb-1">
+                    Satuan <span style="color: rgb(var(--danger));">*</span>
+                </label>
+                <button type="button" @click="satuanOpen = !satuanOpen"
+                        class="w-full flex items-center justify-between gap-2 px-4 py-2.5 text-sm rounded-xl border bd-default glass-card hover:bd-strong focus:outline-none focus:ring-2 focus:ring-emerald-500 transition text-left">
+                    <span class="txt-primary" x-text="satuanValue"></span>
+                    <svg class="w-4 h-4 txt-muted flex-shrink-0" :class="satuanOpen && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </button>
+
+                <div x-show="satuanOpen" x-cloak
+                     class="absolute left-0 right-0 z-30 mt-2 glass-card rounded-xl border bd-soft shadow-lg overflow-hidden">
+                    @foreach (['kg', 'gram', 'ikat', 'karung', 'karung kecil'] as $sat)
+                        <button type="button" @click="satuanValue = '{{ $sat }}'; document.getElementById('inputSatuan').value = '{{ $sat }}'; satuanOpen = false"
+                                class="w-full px-4 py-2.5 text-sm text-left hover:bg-emerald-500/10 transition txt-primary">
+                            {{ $sat }}
+                        </button>
+                    @endforeach
+                </div>
+
+                <input type="hidden" name="satuan" id="inputSatuan" :value="satuanValue" value="{{ old('satuan', $limbah->satuan) }}">
+                @error('satuan')
+                    <p class="text-xs mt-1" style="color: rgb(var(--danger));">{{ $message }}</p>
+                @enderror
+            </div>
+
+            {{-- STATUS --}}
+            <div class="relative" @click.away="statusOpen = false">
+                <label class="block text-sm font-medium txt-primary mb-1">
+                    Status <span style="color: rgb(var(--danger));">*</span>
+                </label>
+                <button type="button" @click="statusOpen = !statusOpen"
+                        class="w-full flex items-center justify-between gap-2 px-4 py-2.5 text-sm rounded-xl border bd-default glass-card hover:bd-strong focus:outline-none focus:ring-2 focus:ring-emerald-500 transition text-left">
+                    <span class="txt-primary" id="statusLabel">
+                        {{ old('status', $limbah->status) === 'nonaktif' ? 'Nonaktif' : 'Aktif' }}
+                    </span>
+                    <svg class="w-4 h-4 txt-muted" :class="statusOpen && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </button>
+
+                <div x-show="statusOpen" x-cloak
+                     class="absolute left-0 right-0 z-30 mt-2 glass-card rounded-xl border bd-soft shadow-lg overflow-hidden">
+                    <button type="button" data-value="aktif" data-label="Aktif" onclick="selectStatus(this)"
+                            class="w-full flex items-center justify-between gap-2 px-4 py-2.5 text-sm text-left hover:bg-emerald-500/10 transition
+                                   {{ old('status', $limbah->status) == 'aktif' ? 'bg-emerald-500/10 txt-brand font-semibold' : 'txt-primary' }}">
+                        <span>Aktif</span>
+                        <span class="text-xs txt-muted">— dijual di katalog</span>
+                    </button>
+                    <button type="button" data-value="nonaktif" data-label="Nonaktif" onclick="selectStatus(this)"
+                            class="w-full flex items-center justify-between gap-2 px-4 py-2.5 text-sm text-left hover:bg-emerald-500/10 transition
+                                   {{ old('status', $limbah->status) == 'nonaktif' ? 'bg-emerald-500/10 txt-brand font-semibold' : 'txt-primary' }}">
+                        <span>Nonaktif</span>
+                        <span class="text-xs txt-muted">— disembunyikan</span>
+                    </button>
+                </div>
+
+                <input type="hidden" name="status" id="inputStatus" value="{{ old('status', $limbah->status) }}">
+            </div>
+        </div>
+
+        {{-- DESKRIPSI --}}
+        <div>
+            <label class="block text-sm font-medium txt-primary mb-1">Deskripsi</label>
+            <textarea name="deskripsi" rows="4" maxlength="1000"
+                      class="w-full px-4 py-2.5 rounded-xl border bd-default focus:outline-none focus:ring-2 focus:ring-emerald-500 glass-input"
+                      style="color: rgb(var(--text-primary));">{{ old('deskripsi', $limbah->deskripsi) }}</textarea>
+        </div>
+
+        {{-- GAMBAR --}}
+        <div>
+            <label class="block text-sm font-medium txt-primary mb-1">
+                Gambar Limbah
+                <span class="text-xs px-2 py-0.5 rounded font-medium" style="background: rgb(var(--warning-soft)); color: rgb(var(--warning));">Disarankan</span>
+                <span class="txt-muted font-normal">(opsional)</span>
+            </label>
+
+            {{-- GAMBAR EXISTING --}}
+            @if ($limbah->gambar)
+                <div class="mb-3">
+                    <div x-show="!hapusGambarLama" class="inline-block">
+                        <div style="position: relative; display: inline-block;">
+                            <div @click="openLightbox('{{ asset('storage/' . $limbah->gambar) }}')"
+                                 style="position: relative; width: 160px; height: 160px; border-radius: 12px; overflow: hidden; cursor: zoom-in; border: 1px solid rgb(var(--border)); background: rgb(var(--surface));"
+                                 onmouseover="this.querySelector('.zoom-overlay').style.opacity='1'"
+                                 onmouseout="this.querySelector('.zoom-overlay').style.opacity='0'">
+                                <img src="{{ asset('storage/' . $limbah->gambar) }}"
+                                     alt="{{ $limbah->nama_limbah }}"
+                                     style="width: 160px; height: 160px; object-fit: cover; display: block;">
+                                <div class="zoom-overlay"
+                                     style="position: absolute; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s;">
+                                    <svg width="24" height="24" fill="none" stroke="white" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"/></svg>
+                                </div>
+                            </div>
+                            <button type="button" @click.stop="hapusGambarLama = true"
+                                    style="position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; background: rgba(255,255,255,0.95); color: #ef4444; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10; box-shadow: 0 2px 8px rgba(0,0,0,0.15); padding: 0; transition: all 0.15s;"
+                                    onmouseover="this.style.background='#ef4444'; this.style.color='white'; this.style.transform='scale(1.1)'"
+                                    onmouseout="this.style.background='rgba(255,255,255,0.95)'; this.style.color='#ef4444'; this.style.transform='scale(1)'"
+                                    title="Hapus gambar">
+                                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+                        </div>
+                        <p style="font-size: 11px; margin-top: 6px; color: rgb(var(--text-muted));">Gambar saat ini · Klik untuk zoom</p>
+                    </div>
+
+                    <div x-show="hapusGambarLama" x-cloak
+                         class="flex items-center gap-3 px-3 py-2 rounded-xl"
+                         style="background: rgb(var(--warning-soft) / 0.5); border: 1px solid rgb(var(--warning) / 0.3);">
+                        <svg class="w-4 h-4 flex-shrink-0" style="color: rgb(var(--warning));" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                        <span class="flex-1 text-xs" style="color: rgb(var(--warning));">
+                            Gambar lama akan dihapus saat Anda klik <strong>Update Limbah</strong>
+                        </span>
+                        <button type="button" @click="hapusGambarLama = false"
+                                class="text-xs font-bold underline flex-shrink-0" style="color: rgb(var(--brand));">
+                            Urungkan
+                        </button>
+                    </div>
+                </div>
+            @endif
+
+            <input type="hidden" name="hapus_gambar" :value="hapusGambarLama ? 1 : 0">
+
+            <input type="file" name="gambar" accept="image/jpeg,image/jpg,image/png,image/webp" x-ref="fileInput"
+                   @change="handleFileChange($event)"
+                   class="hidden">
+
+            {{-- Undo banner --}}
+            <div x-show="showUndo" x-cloak
+                 class="mb-3 flex items-center gap-3 px-3 py-2 rounded-xl"
+                 style="background: rgb(var(--warning-soft) / 0.5); border: 1px solid rgb(var(--warning) / 0.3);">
+                <svg class="w-4 h-4 flex-shrink-0" style="color: rgb(var(--warning));" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                <span class="flex-1 text-xs truncate" style="color: rgb(var(--warning));">
+                    File <strong x-text="undoFileName"></strong> dibatalkan
+                </span>
+                <button type="button" @click="undoCancel()"
+                        class="text-xs font-bold underline flex-shrink-0" style="color: rgb(var(--brand));">
+                    Urungkan
+                </button>
+            </div>
+
+            {{-- Preview gambar baru --}}
+            <div x-show="previewUrl" x-cloak
+                 style="display: flex; align-items: flex-start; gap: 16px; padding: 16px; background: rgb(var(--brand-soft) / 0.3); border: 1px solid rgb(var(--brand) / 0.3); border-radius: 12px; margin-bottom: 12px;">
+                <div style="position: relative; flex-shrink: 0;">
+                    <div @click="openLightbox(previewUrl)"
+                         style="position: relative; width: 160px; height: 160px; border-radius: 12px; overflow: hidden; cursor: zoom-in; border: 2px solid rgb(var(--border)); box-shadow: 0 2px 8px rgba(0,0,0,0.08);"
+                         onmouseover="this.querySelector('.zoom-overlay2').style.opacity='1'"
+                         onmouseout="this.querySelector('.zoom-overlay2').style.opacity='0'">
+                        <img :src="previewUrl" alt="Preview"
+                             style="width: 160px; height: 160px; object-fit: cover; display: block;">
+                        <div class="zoom-overlay2"
+                             style="position: absolute; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s;">
+                            <svg width="24" height="24" fill="none" stroke="white" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"/></svg>
+                        </div>
+                    </div>
+                    <button type="button" @click.stop="cancelFile()"
+                            style="position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; background: rgba(255,255,255,0.95); color: #ef4444; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10; box-shadow: 0 2px 8px rgba(0,0,0,0.15); padding: 0; transition: all 0.15s;"
+                            onmouseover="this.style.background='#ef4444'; this.style.color='white'; this.style.transform='scale(1.1)'"
+                            onmouseout="this.style.background='rgba(255,255,255,0.95)'; this.style.color='#ef4444'; this.style.transform='scale(1)'"
+                            title="Batalkan file">
+                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+                <div style="flex: 1; min-width: 0; padding-top: 8px;">
+                    <p style="font-size: 11px; font-weight: 700; text-transform: uppercase; margin: 0 0 4px 0; color: rgb(var(--brand));">Preview Gambar Baru</p>
+                    <p class="break-all" style="font-size: 14px; font-weight: 500; margin: 0 0 4px 0; line-height: 1.4; color: rgb(var(--text-primary));" x-text="fileName"></p>
+                    <p style="font-size: 12px; margin: 0; color: rgb(var(--text-muted));">Klik gambar untuk memperbesar.</p>
+                </div>
+            </div>
+
+            {{-- File Input --}}
+            <div class="flex items-center gap-3 px-3 py-2 rounded-xl border bd-default glass-card focus-within:ring-2 focus-within:ring-emerald-500 transition">
+                <button type="button" @click="$refs.fileInput.click()"
+                        class="px-3 py-1.5 rounded-lg text-xs font-semibold transition flex-shrink-0"
+                        style="background: rgb(var(--brand-soft)); color: rgb(var(--brand-strong));">
+                    {{ $limbah->gambar ? 'Ganti File' : 'Choose File' }}
+                </button>
+                <span class="flex-1 min-w-0 text-xs break-all"
+                      :class="fileName ? 'txt-primary font-medium' : 'txt-muted'"
+                      x-text="fileName || 'No file chosen'"></span>
+            </div>
+
+            <p class="text-xs txt-secondary mt-2">
+                Format: JPG, PNG, WEBP. Max 2MB.
+                @if ($limbah->gambar)
+                    Klik tombol <strong>X</strong> di gambar untuk menghapus.
+                @endif
+            </p>
+        </div>
+
+        <div class="flex justify-end gap-3 pt-2">
+            <a href="{{ route('admin.limbah.index') }}"
+               class="glass-btn !py-2.5 !px-5">Batal</a>
+            <button type="submit"
+                    class="btn-primary">
+                Update Limbah
+            </button>
+        </div>
+    </form>
+
+    {{-- LIGHTBOX --}}
+    <div x-show="showLightbox" x-cloak
+         @click="closeLightbox()"
+         class="fixed inset-0"
+         style="z-index: 99999; background: rgba(0,0,0,0.9);">
+        <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px;">
+            <img :src="lightboxUrl" alt="Preview"
+                 @click.stop
+                 style="max-width: 100%; max-height: 85vh; border-radius: 16px; box-shadow: 0 25px 50px rgba(0,0,0,0.5); object-fit: contain;">
+        </div>
+        <button @click.stop="closeLightbox()"
+                style="position: absolute; top: 20px; right: 20px; width: 48px; height: 48px; background: #ef4444; color: white; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 100000; box-shadow: 0 4px 12px rgba(0,0,0,0.3);"
+                onmouseover="this.style.background='#dc2626'"
+                onmouseout="this.style.background='#ef4444'"
+                title="Tutup">
+            <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+    </div>
+</div>
+
+@endsection
+
+@push('scripts')
+<script>
+    function selectKategori(el) {
+        document.getElementById('inputKategori').value = el.dataset.value;
+        document.getElementById('kategoriLabel').textContent = el.dataset.label;
+        document.querySelector('[x-data]').__x.$data.kategoriOpen = false;
+    }
+
+    function selectStatus(el) {
+        document.getElementById('inputStatus').value = el.dataset.value;
+        document.getElementById('statusLabel').textContent = el.dataset.label;
+        document.querySelector('[x-data]').__x.$data.statusOpen = false;
+    }
+</script>
+@endpush
